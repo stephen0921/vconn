@@ -1,0 +1,70 @@
+;port_num = top.inputs.keys.size + top.outputs.keys.size
+;cnt = 0
+module [% top.name %](
+;FOREACH item IN top.inputs.keys.sort
+;    cnt = cnt + 1
+;    IF (cnt == port_num)
+;        IF (top.inputs.$item.width == 1)
+    input $item
+;        ELSE
+    input [[% top.inputs.$item.width - 1 %]:0] $item     
+;        END
+;   ELSE
+;        IF (top.inputs.$item.width == 1)
+    input $item,
+;        ELSE
+    input [[% top.inputs.$item.width - 1 %]:0] $item,
+;        END
+;   END 
+; END
+; FOREACH item IN top.outputs.keys.sort
+;     cnt = cnt + 1
+;     IF (cnt == port_num)
+;         IF (top.outputs.$item.width == 1)
+    output $item
+;         ELSE
+    output [[% top.outputs.$item.width - 1 %]:0] $item
+;         END
+;     ELSE
+;         IF (top.outputs.$item.width == 1)
+    output $item,
+;         ELSE
+    output [[% top.outputs.$item.width - 1 %]:0] $item,
+;         END
+;     END
+; END
+);
+
+; FOREACH item IN top.nets.keys.sort
+;    IF (top.nets.$item.width == 1)
+    wire $item;
+;    ELSE
+    wire [[% top.nets.$item.width - 1 %]:0] $item;
+;    END
+; END
+
+; FOREACH item IN top.instances.keys.sort
+;    port_num = top.instances.$item.inputs.keys.size + top.instances.$item.outputs.keys.size
+[% top.instances.$item.mod_name %] $item (
+;    cnt = 0
+;    FOREACH input_port IN top.instances.$item.inputs.keys.sort
+;        cnt = cnt + 1
+;        IF (cnt == port_num)
+    .$input_port ([% top.instances.$item.inputs.$input_port.conn %])
+;        ELSE
+    .$input_port ([% top.instances.$item.inputs.$input_port.conn %]),
+;        END
+;    END
+;    FOREACH output_port IN top.instances.$item.outputs.keys.sort
+;        cnt = cnt + 1
+;        IF (cnt == port_num)
+    .$output_port ([% top.instances.$item.outputs.$output_port.conn %])
+;        ELSE
+    .$output_port ([% top.instances.$item.outputs.$output_port.conn %]),
+;        END
+;    END        
+    );
+    
+; END
+endmodule // [% top.name %]
+                                                                                
