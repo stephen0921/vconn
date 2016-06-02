@@ -49,7 +49,7 @@ sub read_file {
 
     if (@problems) {
         foreach my $problem ($vdb->get_problems()) {
-            #print STDERR "$problem.\n";
+            print STDERR "$problem.\n";
         }
         #die "Warnings parsing files!";
     }
