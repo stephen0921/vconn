@@ -31,18 +31,26 @@ sub init {
 
 sub read_file {
     my $self = shift;
-    my ($file_name) = @_;
-     
-    if(! -e $file_name) {
-        croak "Can not find $file_name : $!";
+    my ($var) = @_;
+    my $file_name;
+    my @files;
+    if ((defined $var) and (ref($var) eq "ARRAY")) {
+        @files = @{$var};
+    } else {
+        $file_name = $var;
+        if(! -e $file_name) {
+            croak "Can not find $file_name : $!";
+        }
+        @files = ($file_name);
     }
-
-    my @files            = ($file_name);
+        
     my %cmd_line_defines = ();
     my $quiet            = 1;
     my @inc_dirs         = ();
     my @lib_dirs         = ();
+    my $exp              = undef;
     my @lib_exts         = ();
+
 
     my $vdb = rvp->read_verilog(\@files,[],\%cmd_line_defines, $quiet,\@inc_dirs,\@lib_dirs,\@lib_exts);
     my @problems = $vdb->get_problems();
@@ -134,8 +142,10 @@ sub add_inst {
         foreach my $item (keys %{ $param_ref }) {
             if (defined $self->{top}->{instances}->{$inst_name}->{parameters}->{$item}) {
                 $self->{top}->{instances}->{$inst_name}->{parameters}->{$item} = $self->param_preprocess($param_ref->{$item});
+                push @{ $self->{top}->{instances}->{$inst_name}->{parameters_show} }, $item;
+            } else {
+                croak "Parameter $item does not exist for module $mod_name : $!";
             }
-            
         }
         
     }

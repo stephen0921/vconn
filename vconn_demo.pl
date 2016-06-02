@@ -4,13 +4,14 @@ use vconn;
 $top = vconn->new("chip_top");
 #$top->print_debug("top");
 
-$top->read_file("a.v");
-$top->read_file("b.v");
-$top->read_file("c.v");
+#$top->read_file("a.v");
+#$top->read_file("b.v");
+#$top->read_file("c.v");
+$top->read_file(["a.v","b.v","c.v"]);
 
 #$top->print_debug("modules");
 #$top->add_inst("a", "u_a", {"a_out_1" => ""},'',{"TEST1" => "12"});
-$top->add_inst("a", "u_a", {"a_out_1" => ""},'',{"TEST3" => "4'h4","A_B_0" => "2*TEST3+4'h5"});
+$top->add_inst("a", "u_a", {"a_out_1" => ""},'',{"TEST3" => "4'h4","A_B_0" => "2*TEST3+4'h5",});
 
 $sub_ref = sub {
   my $var = shift;
