@@ -1,70 +1,117 @@
-;port_num = top.inputs.keys.size + top.outputs.keys.size
-;cnt = 0
+; port_num = top.inputs.keys.size + top.outputs.keys.size
+; cnt = 0
 module [% top.name %](
-;FOREACH item IN top.inputs.keys.sort
-;    cnt = cnt + 1
-;    IF (cnt == port_num)
-;        IF (top.inputs.$item.width == 1)
-    input $item
-;        ELSE
-    input [[% top.inputs.$item.width - 1 %]:0] $item     
-;        END
-;   ELSE
-;        IF (top.inputs.$item.width == 1)
-    input $item,
-;        ELSE
-    input [[% top.inputs.$item.width - 1 %]:0] $item,
-;        END
-;   END 
+; FOREACH item IN top.inputs.keys.sort
+;     cnt = cnt + 1
+;     IF (cnt == port_num)
+    $item
+;     ELSE
+    $item,
+;     END
 ; END
 ; FOREACH item IN top.outputs.keys.sort
 ;     cnt = cnt + 1
 ;     IF (cnt == port_num)
-;         IF (top.outputs.$item.width == 1)
-    output $item
-;         ELSE
-    output [[% top.outputs.$item.width - 1 %]:0] $item
-;         END
+    $item
 ;     ELSE
-;         IF (top.outputs.$item.width == 1)
-    output $item,
-;         ELSE
-    output [[% top.outputs.$item.width - 1 %]:0] $item,
-;         END
+    $item,
 ;     END
 ; END
 );
-
-; FOREACH item IN top.nets.keys.sort
-;    IF (top.nets.$item.width == 1)
-    wire $item;
-;    ELSE
-    wire [[% top.nets.$item.width - 1 %]:0] $item;
-;    END
+; cnt = 0
+; USE format
+; ports_format = format("%-20s\t%s;")
+    // inputs
+; FOREACH item IN top.inputs.keys.sort
+;     IF (top.inputs.$item.width == 1)
+    input [% ports_format(" ", "$item") %]
+;     ELSE
+;         tmp = top.inputs.$item.width - 1
+    input [% ports_format(" [$tmp:0]","$item") %]
+;     END
 ; END
 
+    // outputs
+; FOREACH item IN top.outputs.keys.sort
+;     IF (top.outputs.$item.width == 1)
+    output [% ports_format(" ", "$item") %]
+;   ELSE
+;       tmp = top.outputs.$item.width - 1
+    output [% ports_format("[$tmp:0]","$item") %]
+;   END
+; END
+
+    // wires 
+; FOREACH item IN top.nets.keys.sort
+;     IF (top.inputs.exists("$item"))
+;     ELSE
+;         IF (top.outputs.exists("$item"))
+;         ELSE
+;             IF (top.nets.$item.width == 1)
+    wire [% ports_format(" ", "$item") %]
+;             ELSE
+;                 tmp = top.nets.$item.width - 1
+    wire [% ports_format("  [$tmp:0]","$item") %]
+;             END
+;         END
+;     END
+; END
+
+; FOREACH item IN top.head_code.list
+    $item
+; END
+
+; USE format
+; conn_format = format("%-24s\t%s")
 ; FOREACH item IN top.instances.keys.sort
-;    port_num = top.instances.$item.inputs.keys.size + top.instances.$item.outputs.keys.size
-[% top.instances.$item.mod_name %] $item (
-;    cnt = 0
-;    FOREACH input_port IN top.instances.$item.inputs.keys.sort
-;        cnt = cnt + 1
-;        IF (cnt == port_num)
-    .$input_port ([% top.instances.$item.inputs.$input_port.conn %])
-;        ELSE
-    .$input_port ([% top.instances.$item.inputs.$input_port.conn %]),
-;        END
-;    END
-;    FOREACH output_port IN top.instances.$item.outputs.keys.sort
-;        cnt = cnt + 1
-;        IF (cnt == port_num)
-    .$output_port ([% top.instances.$item.outputs.$output_port.conn %])
-;        ELSE
-    .$output_port ([% top.instances.$item.outputs.$output_port.conn %]),
-;        END
-;    END        
+    // instance $item
+;     port_num = top.instances.$item.inputs.keys.size + top.instances.$item.outputs.keys.size
+;     IF (top.instances.$item.parameters.defined)
+;         param_num = top.instances.$item.parameters.keys.size
+;     ELSE
+;         param_num = 0
+;     END
+;     IF (param_num >0) 
+;         param_cnt = 0
+    [% top.instances.$item.mod_name %] #(
+;         FOREACH param IN top.instances.$item.parameters.keys.sort
+;             param_cnt = param_cnt + 1
+;             tmp = top.instances.$item.parameters.$param
+;             IF (param_cnt == param_num)
+      .[% conn_format("$param","($tmp)") %]
+;             ELSE
+      .[% conn_format("$param","($tmp)") %],
+;             END
+;         END
+    ) $item (
+;     ELSE
+    [% top.instances.$item.mod_name %] $item (
+;     END
+;     cnt = 0
+;     FOREACH input_port IN top.instances.$item.inputs.keys.sort
+;         cnt = cnt + 1
+;         tmp = top.instances.$item.inputs.$input_port.conn    
+;         IF (cnt == port_num)
+      .[% conn_format("$input_port","($tmp)") %]
+;         ELSE
+      .[% conn_format("$input_port","($tmp)") %],
+;         END
+;     END
+;     FOREACH output_port IN top.instances.$item.outputs.keys.sort
+;         cnt = cnt + 1
+;         tmp = top.instances.$item.outputs.$output_port.conn    
+;         IF (cnt == port_num)
+      .[% conn_format("$output_port","($tmp)") %]
+;         ELSE
+      .[% conn_format("$output_port","($tmp)") %],
+;         END
+;     END        
     );
     
+; END
+
+; FOREACH item IN top.tail_code.list
+    $item
 ; END
 endmodule // [% top.name %]
                                                                                 

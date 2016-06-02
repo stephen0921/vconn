@@ -6,6 +6,7 @@ use Data::Dumper;
 use rvp;
 use Template;
 use Symbol;
+use File::Basename;
 
 sub new {
     my $class = shift;
@@ -18,7 +19,12 @@ sub new {
 sub init {
     my ($self) = shift;
     $self->{top}->{name} = shift;
-    
+    my $attr = shift;
+    if (defined $attr) {
+        if (defined $attr->{log}) {
+            $self->{log} = $attr->{log};
+        }
+    }
     $self->{modules} = {};
     $self->{add_ports} = {};
 };
@@ -53,19 +59,19 @@ sub read_file {
         foreach my $p (sort keys %parameters) {
             my $v = $parameters{$p};
             $v =~ s/[ \n]//gs;
-            $self->{modules}->{$module}->{parameters}->{$p} = $v;
+            $self->{modules}->{$module}->{parameters}->{$p} = $self->param_preprocess($v); #default parameters, will be updated when call add_inst
             #print "   parameter: $p defaults to \"$v\"\n";
         }
 
         foreach my $sig (sort $vdb->get_modules_signals($module)) {
             my ($line,$a_line,$i_line,$type,$file,$posedge,$negedge, $type2,$s_file,$s_line,$range,$a_file,$i_file,$dims) = $vdb->get_module_signal($module,$sig);
             if($type =~ /input/) {
-                $self->{modules}->{$module}->{inputs}->{$sig}->{range} = $range;
-                $self->{modules}->{$module}->{inputs}->{$sig}->{width} = $self->range_to_width($range);
+                $self->{modules}->{$module}->{inputs}->{$sig}->{range} = $range;#has parameter
+                #$self->{modules}->{$module}->{inputs}->{$sig}->{width} = $self->range_to_width($range, $self->{modules}->{$module}->{parameters});
             }
             if($type =~ /output/) {
-                $self->{modules}->{$module}->{outputs}->{$sig}->{range} = $range;
-                $self->{modules}->{$module}->{outputs}->{$sig}->{width} = $self->range_to_width($range);
+                $self->{modules}->{$module}->{outputs}->{$sig}->{range} = $range;#has parameter
+                #$self->{modules}->{$module}->{outputs}->{$sig}->{width} = $self->range_to_width($range, $self->{modules}->{$module}->{parameters});
             }
         }
     }
@@ -73,7 +79,8 @@ sub read_file {
 
 sub add_inst {
     my $self = shift;
-    my ($mod_name,$inst_name,$port_href,$sub_href) = @_;
+    my ($mod_name,$inst_name,$port_href,$sub_href,$param_ref) = @_;
+    
     #check whether module is read in
     my $mod_found = 0;
     foreach my $item (keys %{ $self->{modules} }) {
@@ -94,21 +101,21 @@ sub add_inst {
 
     #default net name
     foreach my $item (keys %{ $self->{top}->{instances}->{$inst_name}->{inputs} }) {
-        if (defined $sub_href) { #callback sub
+        if ((defined $sub_href) and (ref($sub_href) eq "CODE")) { #callback sub
             $self->{top}->{instances}->{$inst_name}->{inputs}->{$item}->{conn} = &$sub_href($item);
         } else { #default
             $self->{top}->{instances}->{$inst_name}->{inputs}->{$item}->{conn} = $item;
         }
     }
     foreach my $item (keys %{ $self->{top}->{instances}->{$inst_name}->{outputs} }) {
-        if (defined $sub_href) { #callback sub
+        if ((defined $sub_href) and (ref($sub_href) eq "CODE")) { #callback sub
             $self->{top}->{instances}->{$inst_name}->{outputs}->{$item}->{conn} = &$sub_href($item);
         } else { #default 
             $self->{top}->{instances}->{$inst_name}->{outputs}->{$item}->{conn} = $item;
         }
     }
     #wire name customized
-    if ((defined $port_href) and ($port_href ne "")) {
+    if ((defined $port_href) and (ref($port_href) eq "HASH")) {
         foreach my $item (keys %{ $port_href }) {
             if (defined $self->{top}->{instances}->{$inst_name}->{inputs}->{$item}) {
                 $self->{top}->{instances}->{$inst_name}->{inputs}->{$item}->{conn} = $port_href->{$item}; #can be bus0[5:2], bus1, or {bus2[3:2], bus3}
@@ -118,6 +125,37 @@ sub add_inst {
             }
         }
     }
+    #default parameters
+    $self->{top}->{instances}->{$inst_name}->{parameters} = $self->{modules}->{$mod_name}->{parameters};
+    
+    #parameter customized
+    if ((defined $param_ref) and (ref($param_ref) eq "HASH")) {
+        #print "custom parameters\n";
+        foreach my $item (keys %{ $param_ref }) {
+            if (defined $self->{top}->{instances}->{$inst_name}->{parameters}->{$item}) {
+                $self->{top}->{instances}->{$inst_name}->{parameters}->{$item} = $self->param_preprocess($param_ref->{$item});
+            }
+            
+        }
+        
+    }
+    my $param_value;
+    $param_value = \%{ $self->{top}->{instances}->{$inst_name}->{parameters} } ;
+    foreach my $param (keys %{ $param_value }) {
+        #print "before replace",$param_value->{$param},"\n";
+        $param_value->{$param} = $self->replace_parameter($param_value->{$param}, $self->{top}->{instances}->{$inst_name}->{parameters});
+        #print "after  replace",$param_value->{$param},"\n";
+        $param_value->{$param} = eval($param_value->{$param});
+    }
+    $self->{top}->{instances}->{$inst_name}->{parameters} = $param_value;
+        
+    foreach my $input (keys %{ $self->{top}->{instances}->{$inst_name}->{inputs} }) {
+        $self->{top}->{instances}->{$inst_name}->{inputs}->{$input}->{width} = $self->range_to_width($self->{top}->{instances}->{$inst_name}->{inputs}->{$input}->{range}, $self->{top}->{instances}->{$inst_name}->{parameters});
+    }
+    foreach my $output (keys %{ $self->{top}->{instances}->{$inst_name}->{outputs} }) {
+        $self->{top}->{instances}->{$inst_name}->{outputs}->{$output}->{width} = $self->range_to_width($self->{top}->{instances}->{$inst_name}->{outputs}->{$output}->{range}, $self->{top}->{instances}->{$inst_name}->{parameters});
+    }
+    
     #generate or update top nets
     #inputs
     foreach my $item (keys %{ $self->{top}->{instances}->{$inst_name}->{inputs} }) {
@@ -129,15 +167,15 @@ sub add_inst {
             my $mod_name = $self->{top}->{instances}->{$inst_name}->{mod_name};
           
             if (defined $self->{top}->{nets}->{$net}) {
-                if ($self->{top}->{nets}->{$net}->{width} != $self->{modules}->{$mod_name}->{inputs}->{$item}->{width}) {
-                    croak "Known width for net $net is $self->{top}->{nets}->{$net}->{width}, but the newly added one is $self->{modules}->{inputs}->{$item}->{width}";
+                if ($self->{top}->{nets}->{$net}->{width} != $self->{top}->{instances}->{$inst_name}->{inputs}->{$item}->{width}) {
+                    croak "Known width for net $net is $self->{top}->{nets}->{$net}->{width}, but the newly added one is $self->{top}->{instances}->{$inst_name}->{inputs}->{$item}->{width}";
                 }
                 #print "if input item = $item\n";
                 
             }
             else {
                 defined ($mod_name) or croak "instance $inst_name must is a known module";
-                $self->{top}->{nets}->{$net}->{width} = $self->{modules}->{$mod_name}->{inputs}->{$item}->{width};
+                $self->{top}->{nets}->{$net}->{width} = $self->{top}->{instances}->{$inst_name}->{inputs}->{$item}->{width};
                 #print "else input item = $item\n";
                 #print "net $net: width = $self->{top}->{nets}->{$net}->{width}\n";   
             }
@@ -159,8 +197,8 @@ sub add_inst {
             }
             else {
                 defined ($mod_name) or croak "instance $inst_name must is a known module";
-                #check against to module info
-                my $width = $self->{modules}->{$mod_name}->{inputs}->{$item}->{width};
+                #check against to inst info
+                my $width = $self->{top}->{instances}->{$inst_name}->{inputs}->{$item}->{width};
                 if ($width < ($high +1)) {
                     croak "Known width for port $item is $width bits wide, but the newly added one's highest bit is $high";
                 }
@@ -173,8 +211,8 @@ sub add_inst {
         elsif ($self->{top}->{instances}->{$inst_name}->{inputs}->{$item}->{conn} =~/^(\d+)\'[bdh](\w+)$/) {
             my $width = $1;
             my $mod_name = $self->{top}->{instances}->{$inst_name}->{mod_name};
-            #check against to module info
-            if ($width ne $self->{modules}->{$mod_name}->{inputs}->{$item}->{width}) {
+            #check against to inst info
+            if ($width ne $self->{top}->{instances}->{$inst_name}->{inputs}->{$item}->{width}) {
                 croak "Width mismatch between module and instance for port $item";
             }
         }
@@ -194,7 +232,7 @@ sub add_inst {
                 croak "This branch must be {bus2[21:0], bus3[3:1],bus4} alike";
             }
             
-            my $width = $self->{modules}->{$mod_name}->{inputs}->{$item}->{width};
+            my $width = $self->{top}->{instances}->{$inst_name}->{inputs}->{$item}->{width};
             $self->check_combination($self->{top}->{instances}->{$inst_name}->{inputs}->{$item}->{conn}, $width);
         }
     }
@@ -207,15 +245,15 @@ sub add_inst {
             my $mod_name = $self->{top}->{instances}->{$inst_name}->{mod_name};
 
             if (defined $self->{top}->{nets}->{$net}) {
-                if ($self->{top}->{nets}->{$net}->{width} != $self->{modules}->{$mod_name}->{outputs}->{$item}->{width}) {
-                    croak "Known width for net $net is $self->{top}->{nets}->{$net}->{width}, but the newly added one is $self->{modules}->{$mod_name}->{outputs}->{$item}->{width}";
+                if ($self->{top}->{nets}->{$net}->{width} != $self->{top}->{instances}->{$inst_name}->{outputs}->{$item}->{width}) {
+                    croak "Known width for net $net is $self->{top}->{nets}->{$net}->{width}, but the newly added one is $self->{top}->{instances}->{$inst_name}->{outputs}->{$item}->{width}";
                 }
                 #print "if output item = $item\n";
                 
             }
             else {
                 defined ($mod_name) or croak "instance $inst_name must is a known module";
-                $self->{top}->{nets}->{$net}->{width} = $self->{modules}->{$mod_name}->{outputs}->{$item}->{width};
+                $self->{top}->{nets}->{$net}->{width} = $self->{top}->{instances}->{$inst_name}->{outputs}->{$item}->{width};
                 #print "else output item = $item\n";
                 #print "net $net: width = $self->{top}->{nets}->{$net}->{width}\n";
                 
@@ -228,6 +266,10 @@ sub add_inst {
         #11'b1, 4'd10, 9'h1 must not occur in outputs
         elsif ($self->{top}->{instances}->{$inst_name}->{outputs}->{$item}->{conn} =~/^(\d+)\'[bdh](\w+)$/) {
             croak "outputs must not tie 0 or 1";
+        }
+        #output float
+        elsif ($self->{top}->{instances}->{$inst_name}->{outputs}->{$item}->{conn} =~/^$/) {
+               
         }
         else {
             croak "Unexpected branch happens, conn info: $self->{top}->{instances}->{$inst_name}->{outputs}->{$item}->{conn}";
@@ -396,23 +438,27 @@ sub conn {
     }
 }
 
-sub write_out {
+sub add_code {
     my $self = shift;
-    my $tpl = "top_vconn.tt";
-    my $tt = Template->new({
-            INCLUDE_PATH => "./",
-            INTERPOLATE => 1,
-            OUTLINE_TAG => ';',
-        }) || croak "$Template::ERROR\n";
-
-    $tt->process("$tpl", $self) || croak $tt->error(), "\n";
+    my ($code, $pos) = @_;
+    if ((! defined $pos) or ($pos == 0)) {
+        push @{ $self->{top}->{tail_code} }, $code;
+    } elsif ($pos == 1) {
+        push @{ $self->{top}->{head_code} }, $code;
+    } else {
+        croak "pos can only be set 0 or 1 : $!";
+    }
 }
 
 sub write_file {
     my $self = shift;
     my ($file) = @_;
+    my $toolscr = $ENV{'TOOLSCR'};
     my $tpl = "top_vconn.tt";
     my $out_fh = gensym;
+
+    my $dir = dirname($file);
+    mkdir $dir unless (-e $dir);
     open($out_fh, ">$file") or croak "Can not write file $file!: $!";
     my @out;
     pipe(READER, WRITER) or croak "pipe no good: $!";
@@ -434,7 +480,7 @@ sub write_file {
         open STDOUT, ">&WRITER";
 
         my $tt = Template->new({
-            INCLUDE_PATH => "./",
+            INCLUDE_PATH => "$toolscr/tpl",
             INTERPOLATE => 1,
             OUTLINE_TAG => ';',
         }) || croak "$Template::ERROR\n";
@@ -454,22 +500,55 @@ sub write_file {
     close $out_fh;
 }
 
+sub write_out {
+    my $self = shift;
+    my $tpl = "top_vconn.tt";
+    my $out_fh = gensym;
+
+    my $tt = Template->new({
+        INCLUDE_PATH => "./",
+        INTERPOLATE => 1,
+        OUTLINE_TAG => ';',
+    }) || croak "$Template::ERROR\n";
+
+    $tt->process("$tpl", $self)
+        || croak $tt->error(), "\n";
+
+}
+
 sub range_to_width {
     my $self = shift;
-    my ($range) = @_;
+    my ($range, $parameters_ref) = @_;
     my $tmp1;
     my $tmp2;
     my $width = 1;
     if ($range =~ /(.*):(.*)/) {
         $tmp1 = $1;
         $tmp2 = $2;
+        $tmp1 = $self->replace_parameter($tmp1, $parameters_ref);
+        $tmp2 = $self->replace_parameter($tmp2, $parameters_ref);
         
-        #print "tmp1 = $tmp1\n";
-        #print "tmp2 = $tmp2\n";
-        $width = $tmp1 - $tmp2 +1;
-        #print "width = $width\n";
+        $width = eval($tmp1) - eval($tmp2) +1;
     }
     $width;
+}
+
+sub replace_parameter {
+    my $self = shift;
+    my ($var, $parameters_ref) = @_;
+    #print "in replace func\n";
+    #print Dumper($var);
+    #sort by length, because N are contained by MN, so replace MN first
+    foreach (sort {length($b)<=>length($a)} keys(%{$parameters_ref})) {
+        my $key = $_;
+        my $value = $parameters_ref->{$key};
+        if ($var =~ /$key/) {
+            $var =~s/$key/$value/g;
+            $var = $self->replace_parameter($var, $parameters_ref);
+        }
+    }
+    #print "out of replace func\n";
+    return $var;
 }
 
 sub print_debug {
@@ -479,4 +558,21 @@ sub print_debug {
     print Dumper($self->{$var});
 }
 
+sub param_preprocess {
+    my ($self) = shift;
+    my ($param) = @_;
+    my $tmp;
+    if ($param =~m/(\d+)?\'b(\d+)/i) {
+        $tmp = oct "0b"."$2";
+        $param =~ s/(\d+)?\'b(\d+)/$tmp/;
+        $param = $self->param_preprocess($param);
+    } elsif ($param =~m/(\d+)?\'h(\w+)/i) {
+        $tmp = hex "0x"."$2";
+        $param =~ s/(\d+)?\'h(\w+)/$tmp/;
+        $param = $self->param_preprocess($param);
+    } else {
+        return $param;
+    }
+}
+    
 1;
