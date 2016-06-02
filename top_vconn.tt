@@ -66,15 +66,15 @@ module [% top.name %](
 ; FOREACH item IN top.instances.keys.sort
     // instance $item
 ;     port_num = top.instances.$item.inputs.keys.size + top.instances.$item.outputs.keys.size
-;     IF (top.instances.$item.parameters.defined)
-;         param_num = top.instances.$item.parameters.keys.size
+;     IF (top.instances.$item.parameters_show.defined)
+;         param_num = top.instances.$item.parameters_show.list.size
 ;     ELSE
 ;         param_num = 0
 ;     END
 ;     IF (param_num >0) 
 ;         param_cnt = 0
     [% top.instances.$item.mod_name %] #(
-;         FOREACH param IN top.instances.$item.parameters.keys.sort
+;         FOREACH param IN top.instances.$item.parameters_show.list
 ;             param_cnt = param_cnt + 1
 ;             tmp = top.instances.$item.parameters.$param
 ;             IF (param_cnt == param_num)
